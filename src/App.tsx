@@ -125,7 +125,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="w-screen h-screen bg-black flex flex-col items-center justify-center text-white">
+      <div className="w-screen h-[100dvh] bg-black flex flex-col items-center justify-center text-white">
         <Loader2 className="w-8 h-8 text-white animate-spin mb-3" />
         <p className="text-xs font-mono text-[#888888] tracking-wider uppercase">
           Initializing KindleFlow...
@@ -135,7 +135,7 @@ export default function App() {
   }
 
   return (
-    <div className="w-screen h-screen overflow-hidden bg-black flex flex-col">
+    <div className="w-screen h-[100dvh] overflow-hidden bg-black flex flex-col">
       {activeBook ? (
         <ReaderView
           book={activeBook}
@@ -155,4 +155,4 @@ export default function App() {
       )}
     </div>
   );
-}
+    }
