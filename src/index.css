@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-color: #000000;
+    --text-color: #e5e5e5;
+    --muted-color: #737373;
+    --surface-color: #121212;
+    --border-color: #262626;
+    --accent-color: #3b82f6;
+  }
+
+  body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.font-serif-reader {
+  font-family: 'Literata', 'Charis SIL', Georgia, Cambria, serif;
+}
+
+.font-newsreader {
+  font-family: 'Newsreader', 'Times New Roman', serif;
+}
+
+.font-sans-reader {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+}
+
+.font-mono-reader {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Page flip 3D container */
+.book-viewport {
+  perspective: 2000px;
+  perspective-origin: center center;
+}
+
+.page-surface {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+/* Realistic page book spine and shadow */
+.page-shadow-right {
+  box-shadow: -15px 0 25px -10px rgba(0, 0, 0, 0.5) inset;
+}
+
+.page-shadow-left {
+  box-shadow: 15px 0 25px -10px rgba(0, 0, 0, 0.5) inset;
+}
+
+/* Hide scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Smooth reading text layout */
+.reading-content p {
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+}
