@@ -1,0 +1,5 @@
+{
+  "name": "KindleFlow",
+  "description": "Reflowable, responsive Kindle-style e-reader for PDFs with OLED dark mode, pagination engine, and IndexedDB storage.",
+  "requestFramePermissions": []
+}
