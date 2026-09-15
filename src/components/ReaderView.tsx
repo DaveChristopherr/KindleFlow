@@ -23,7 +23,9 @@ import {
   Palette,
   X,
   Clock,
-  Check
+  Check,
+  Search,
+  ArrowRight
 } from 'lucide-react';
 
 interface ReaderViewProps {
@@ -48,6 +50,8 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const [showBrightnessPopover, setShowBrightnessPopover] = useState<boolean>(false);
   const [showThemePopover, setShowThemePopover] = useState<boolean>(false);
   const [showTocDrawer, setShowTocDrawer] = useState<boolean>(false);
+  const [tocSearch, setTocSearch] = useState<string>('');
+  const [jumpPageInput, setJumpPageInput] = useState<string>('');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [turnDirection, setTurnDirection] = useState<'next' | 'prev' | 'none'>('none');
   const [sessionSeconds, setSessionSeconds] = useState<number>(book.timeSpent || 0);
@@ -65,7 +69,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     onUpdateProgressRef.current = onUpdateProgress;
   }, [onUpdateProgress]);
 
-  // Session reading timer (tracks active duration in current book)
+  // Session reading timer (tracks actual reading duration)
   useEffect(() => {
     const initialTime = book.timeSpent || 0;
     setSessionSeconds(initialTime);
@@ -75,7 +79,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       sessionSecondsRef.current += 1;
       setSessionSeconds(sessionSecondsRef.current);
       
-      // Save periodically
+      // Save every 10 seconds
       if (sessionSecondsRef.current % 10 === 0) {
         onUpdateProgressRef.current(book.id, lastSavedPageRef.current, sessionSecondsRef.current);
       }
@@ -87,7 +91,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     };
   }, [book.id]);
 
-  // Clean up animation and save timeouts on unmount
+  // Clean up timeouts on unmount
   useEffect(() => {
     return () => {
       if (turnTimeoutRef.current) clearTimeout(turnTimeoutRef.current);
@@ -130,7 +134,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     };
   }, [recomputeReflow]);
 
-  // Notify parent only when currentPage genuinely changes from the saved state, with visual auto-save indicator
+  // Notify parent when currentPage changes
   useEffect(() => {
     if (lastSavedPageRef.current !== currentPage) {
       lastSavedPageRef.current = currentPage;
@@ -151,12 +155,12 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     const secs = seconds % 60;
 
     if (hrs > 0) {
-      return `${hrs}h ${remMins}m read`;
+      return `${hrs}h ${remMins}m`;
     }
     if (mins > 0) {
-      return `${mins}m ${secs < 10 ? '0' : ''}${secs}s read`;
+      return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
     }
-    return `${secs}s read`;
+    return `${secs}s`;
   };
 
   const goToNextPage = useCallback(() => {
@@ -186,7 +190,10 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
         e.preventDefault();
         goToNextPage();
       } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
@@ -194,6 +201,9 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         goToPrevPage();
       } else if (e.key === 'Escape') {
         setShowControls((prev) => !prev);
+        setShowBrightnessPopover(false);
+        setShowThemePopover(false);
+        setShowTocDrawer(false);
       }
     };
 
@@ -201,20 +211,23 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [goToNextPage, goToPrevPage]);
 
+  // Touch gesture handling
   const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartRef.current = {
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY,
-    };
+    if (e.touches.length === 1) {
+      touchStartRef.current = {
+        x: e.touches[0].clientX,
+        y: e.touches[0].clientY,
+      };
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartRef.current) return;
+    if (!touchStartRef.current || e.changedTouches.length === 0) return;
     const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
     const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
     touchStartRef.current = null;
 
-    if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY)) {
+    if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
       if (deltaX < 0) {
         goToNextPage();
       } else {
@@ -223,30 +236,44 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
     }
   };
 
+  // Fullscreen toggle
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
       setIsFullscreen(true);
     } else {
-      document.exitFullscreen().catch(() => {});
-      setIsFullscreen(false);
+      if (document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+        setIsFullscreen(false);
+      }
+    }
+  };
+
+  const handleJumpToPage = (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = parseInt(jumpPageInput.trim(), 10);
+    if (!isNaN(target) && target >= 1 && target <= pages.length) {
+      setCurrentPage(target);
+      setShowTocDrawer(false);
+      setJumpPageInput('');
     }
   };
 
   const activePage = pages[currentPage - 1];
-  const progressPercent = pages.length > 0 ? Math.round((currentPage / pages.length) * 100) : 0;
+  const progressPercent = pages.length > 0 
+    ? Math.min(100, Math.max(1, Math.round((currentPage / pages.length) * 100)))
+    : 0;
 
-  // Reading time estimate (~200 words/min)
-  const remainingPages = Math.max(0, pages.length - currentPage);
-  const estMinutesRemaining = Math.max(1, Math.round(remainingPages * 0.75));
+  const totalBookWords = book.totalWords || Math.max(100, pages.length * 220);
+  const remainingWords = Math.round(totalBookWords * (1 - (currentPage / Math.max(1, pages.length))));
+  const estMinutesRemaining = Math.max(1, Math.round(remainingWords / 200));
 
-  // Theming ONLY for reader page content container
   const getPageContainerTheme = () => {
     switch (settings.theme) {
       case 'sepia':
         return {
-          bg: '#F4ECD8',
-          text: '#2D2A26',
+          bg: '#FBF0D9',
+          text: '#2D271E',
           border: '#E3D7BF',
           muted: '#7B7163',
         };
@@ -271,6 +298,22 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const pageTheme = getPageContainerTheme();
   const brightnessVal = settings.brightness ?? 100;
 
+  // Filtered chapters for TOC
+  const filteredChapters = (book.chapters || []).map((ch, idx) => {
+    const targetIndex = pages.findIndex((p) => p.chapterIndex === idx);
+    const startPage = targetIndex !== -1 
+      ? targetIndex + 1 
+      : Math.max(1, Math.round((idx / Math.max(1, book.chapters.length)) * Math.max(1, pages.length)));
+    return {
+      ...ch,
+      originalIndex: idx,
+      startPage,
+    };
+  }).filter((ch) => 
+    ch.title.toLowerCase().includes(tocSearch.toLowerCase()) ||
+    ch.startPage.toString().includes(tocSearch)
+  );
+
   return (
     <div 
       id="reader-view-root" 
@@ -278,7 +321,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Top Header Overlay (Strict Monochrome) */}
+      {/* Top Header Overlay */}
       <header
         id="reader-topbar"
         className={`absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-3 sm:px-6 py-3 bg-[#000000]/95 backdrop-blur-md border-b border-[#222222] transition-all duration-200 ${
@@ -290,7 +333,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           <button
             id="btn-back-library"
             onClick={onBackToLibrary}
-            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-[#111111] border border-[#222222] hover:border-[#444444] text-xs font-medium text-[#FFFFFF] transition"
+            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-xl bg-[#000000] border border-[#222222] hover:border-[#444444] text-xs font-medium text-[#FFFFFF] transition"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Library</span>
@@ -299,14 +342,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           <button
             id="btn-toc"
             onClick={() => setShowTocDrawer(true)}
-            className="p-1.5 sm:p-2 rounded-lg bg-[#111111] border border-[#222222] hover:border-[#444444] text-[#FFFFFF] transition"
+            className="p-1.5 sm:p-2 rounded-xl bg-[#000000] border border-[#222222] hover:border-[#444444] text-[#FFFFFF] transition"
             title="Table of Contents"
           >
             <List className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Center: Title, Chapter & Session Timer */}
+        {/* Center: Title & Reading Time */}
         <div className="text-center truncate px-1 max-w-[120px] xs:max-w-[150px] sm:max-w-xs md:max-w-sm">
           <h2 id="reader-book-title" className="text-xs font-bold text-[#FFFFFF] truncate leading-tight">
             {book.title}
@@ -318,10 +361,10 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           </div>
         </div>
 
-        {/* Right: Controls (Font, Brightness, Themes, Fullscreen) */}
+        {/* Right: Controls */}
         <div className="flex items-center gap-1 sm:gap-2">
-          {/* Font Size Adjusters */}
-          <div className="flex items-center bg-[#111111] border border-[#222222] rounded-lg p-0.5">
+          {/* Font Size */}
+          <div className="flex items-center bg-[#000000] border border-[#222222] rounded-xl p-0.5">
             <button
               id="btn-font-dec"
               onClick={() => onUpdateSettings({ ...settings, fontSize: Math.max(12, settings.fontSize - 2) })}
@@ -343,178 +386,227 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             </button>
           </div>
 
-          {/* Brightness Toggle */}
+          {/* Brightness */}
           <button
             id="btn-brightness-toggle"
             onClick={() => {
               setShowBrightnessPopover((prev) => !prev);
               setShowThemePopover(false);
             }}
-            className="p-1.5 sm:p-2 rounded-lg bg-[#111111] border border-[#222222] hover:border-[#444444] text-[#FFFFFF] transition"
-            title="Adjust Brightness"
+            className={`p-1.5 sm:p-2 rounded-xl border transition ${
+              showBrightnessPopover 
+                ? 'bg-[#FFFFFF] text-[#000000] border-[#FFFFFF]' 
+                : 'bg-[#000000] text-[#FFFFFF] border-[#222222] hover:border-[#444444]'
+            }`}
+            title="Brightness settings"
           >
             <Sun className="w-3.5 h-3.5" />
           </button>
 
-          {/* Theme Selector Toggle */}
+          {/* Theme */}
           <button
             id="btn-theme-toggle"
             onClick={() => {
               setShowThemePopover((prev) => !prev);
               setShowBrightnessPopover(false);
             }}
-            className="p-1.5 sm:p-2 rounded-lg bg-[#111111] border border-[#222222] hover:border-[#444444] text-[#FFFFFF] transition"
-            title="Reader Themes"
+            className={`p-1.5 sm:p-2 rounded-xl border transition ${
+              showThemePopover 
+                ? 'bg-[#FFFFFF] text-[#000000] border-[#FFFFFF]' 
+                : 'bg-[#000000] text-[#FFFFFF] border-[#222222] hover:border-[#444444]'
+            }`}
+            title="Theme & typography"
           >
             <Palette className="w-3.5 h-3.5" />
           </button>
 
-          {/* Fullscreen (Desktop/Tablet) */}
+          {/* Fullscreen */}
           <button
-            id="btn-fullscreen"
+            id="btn-fullscreen-toggle"
             onClick={toggleFullscreen}
-            className="hidden sm:block p-1.5 sm:p-2 rounded-lg bg-[#111111] border border-[#222222] hover:border-[#444444] text-[#888888] hover:text-[#FFFFFF] transition"
-            title="Toggle Fullscreen"
+            className="p-1.5 sm:p-2 rounded-xl bg-[#000000] border border-[#222222] hover:border-[#444444] text-[#FFFFFF] transition hidden xs:flex"
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </header>
 
-      {/* Brightness Popover Slider */}
+      {/* Brightness Popover */}
       {showBrightnessPopover && (
         <div 
-          id="panel-brightness"
-          className="absolute top-14 right-14 z-40 bg-[#111111] border border-[#222222] rounded-xl p-3.5 shadow-2xl w-56 flex flex-col gap-2"
+          id="popover-brightness"
+          className="absolute top-14 right-4 z-40 w-64 bg-[#000000] border border-[#222222] rounded-2xl p-4 shadow-2xl"
         >
-          <div className="flex items-center justify-between text-[11px] font-mono text-[#888888]">
-            <span className="uppercase font-bold tracking-wider">Backlight</span>
-            <span id="label-brightness-val" className="text-[#FFFFFF]">{brightnessVal}%</span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#888888]">Brightness</span>
+            <span className="text-xs font-mono text-[#FFFFFF]">{brightnessVal}%</span>
           </div>
           <input
             type="range"
-            id="brightness-slider"
-            min="30"
-            max="100"
+            min={20}
+            max={100}
             value={brightnessVal}
             onChange={(e) => onUpdateSettings({ ...settings, brightness: parseInt(e.target.value) })}
-            className="w-full cursor-pointer"
+            className="w-full cursor-pointer accent-[#FFFFFF]"
           />
         </div>
       )}
 
-      {/* Theme Popover (Applies ONLY to reading page container) */}
+      {/* Theme & Typography Popover */}
       {showThemePopover && (
         <div 
-          id="panel-theme"
-          className="absolute top-14 right-4 z-40 bg-[#111111] border border-[#222222] rounded-xl p-3 shadow-2xl w-48 flex flex-col gap-1.5"
+          id="popover-theme"
+          className="absolute top-14 right-4 z-40 w-72 bg-[#000000] border border-[#222222] rounded-2xl p-4 shadow-2xl space-y-4"
         >
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#888888] px-1 mb-1">
-            Page Canvas
-          </span>
-          <button
-            onClick={() => {
-              onUpdateSettings({ ...settings, theme: 'oled' });
-              setShowThemePopover(false);
-            }}
-            className={`text-left px-3 py-2 rounded-lg text-xs font-mono flex items-center justify-between transition border ${
-              settings.theme === 'oled' ? 'border-[#444444] bg-[#000000] text-[#FFFFFF]' : 'border-[#222222] bg-[#111111] text-[#888888] hover:text-[#FFFFFF]'
-            }`}
-          >
-            <span>OLED Black</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#000000] border border-[#555555]"></span>
-          </button>
-          <button
-            onClick={() => {
-              onUpdateSettings({ ...settings, theme: 'sepia' });
-              setShowThemePopover(false);
-            }}
-            className={`text-left px-3 py-2 rounded-lg text-xs font-mono flex items-center justify-between transition border ${
-              settings.theme === 'sepia' ? 'border-[#444444] bg-[#111111] text-[#FFFFFF]' : 'border-[#222222] bg-[#111111] text-[#888888] hover:text-[#FFFFFF]'
-            }`}
-          >
-            <span>Sepia Paper</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#F4ECD8] border border-[#E3D7BF]"></span>
-          </button>
-          <button
-            onClick={() => {
-              onUpdateSettings({ ...settings, theme: 'light' });
-              setShowThemePopover(false);
-            }}
-            className={`text-left px-3 py-2 rounded-lg text-xs font-mono flex items-center justify-between transition border ${
-              settings.theme === 'light' ? 'border-[#444444] bg-[#111111] text-[#FFFFFF]' : 'border-[#222222] bg-[#111111] text-[#888888] hover:text-[#FFFFFF]'
-            }`}
-          >
-            <span>Crisp White</span>
-            <span className="w-2.5 h-2.5 rounded-full bg-[#FFFFFF] border border-[#CCCCCC]"></span>
-          </button>
+          <div>
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#888888] block mb-2">Reading Palette</span>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => onUpdateSettings({ ...settings, theme: 'oled' })}
+                className={`py-1.5 px-2 text-xs rounded-xl font-medium border text-center transition ${
+                  settings.theme === 'oled' 
+                    ? 'border-[#FFFFFF] bg-[#000000] text-[#FFFFFF]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                OLED
+              </button>
+              <button
+                onClick={() => onUpdateSettings({ ...settings, theme: 'sepia' })}
+                className={`py-1.5 px-2 text-xs rounded-xl font-medium border text-center transition ${
+                  settings.theme === 'sepia' 
+                    ? 'border-[#D4AF37] bg-[#FBF0D9] text-[#2D271E]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                Sepia
+              </button>
+              <button
+                onClick={() => onUpdateSettings({ ...settings, theme: 'light' })}
+                className={`py-1.5 px-2 text-xs rounded-xl font-medium border text-center transition ${
+                  settings.theme === 'light' 
+                    ? 'border-[#FFFFFF] bg-[#FFFFFF] text-[#000000]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                Light
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <span className="text-[10px] font-mono uppercase tracking-wider text-[#888888] block mb-2">Typography</span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => onUpdateSettings({ ...settings, font: 'serif' })}
+                className={`py-1.5 px-2 text-xs rounded-xl border text-center font-serif transition ${
+                  settings.font === 'serif' 
+                    ? 'border-[#FFFFFF] bg-[#000000] text-[#FFFFFF]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                Charis Serif
+              </button>
+              <button
+                onClick={() => onUpdateSettings({ ...settings, font: 'newsreader' })}
+                className={`py-1.5 px-2 text-xs rounded-xl border text-center font-serif italic transition ${
+                  settings.font === 'newsreader' 
+                    ? 'border-[#FFFFFF] bg-[#000000] text-[#FFFFFF]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                Newsreader
+              </button>
+              <button
+                onClick={() => onUpdateSettings({ ...settings, font: 'sans' })}
+                className={`py-1.5 px-2 text-xs rounded-xl border text-center font-sans transition ${
+                  settings.font === 'sans' 
+                    ? 'border-[#FFFFFF] bg-[#000000] text-[#FFFFFF]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                Modern Sans
+              </button>
+              <button
+                onClick={() => onUpdateSettings({ ...settings, font: 'mono' })}
+                className={`py-1.5 px-2 text-xs rounded-xl border text-center font-mono transition ${
+                  settings.font === 'mono' 
+                    ? 'border-[#FFFFFF] bg-[#000000] text-[#FFFFFF]' 
+                    : 'border-[#222222] bg-[#000000] text-[#888888] hover:border-[#444444]'
+                }`}
+              >
+                Monospace
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Reading Stage (Brightness Filter applied here) */}
+      {/* Main Reading Stage */}
       <main
-        id="reader-brightness-layer"
+        id="reader-stage"
         ref={containerRef}
-        style={{
-          filter: `brightness(${brightnessVal}%)`,
-          transition: 'filter 0.15s ease-out',
+        onClick={(e) => {
+          // If clicked in center 40% of screen, toggle controls
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (rect) {
+            const clickX = e.clientX - rect.left;
+            const width = rect.width;
+            if (clickX < width * 0.25) {
+              goToPrevPage();
+            } else if (clickX > width * 0.75) {
+              goToNextPage();
+            } else {
+              setShowControls((prev) => !prev);
+              setShowBrightnessPopover(false);
+              setShowThemePopover(false);
+            }
+          }
         }}
-        className="relative flex-1 w-full h-full flex items-center justify-center p-3 sm:p-6 md:p-8 overflow-hidden"
+        style={{
+          backgroundColor: pageTheme.bg,
+          filter: brightnessVal < 100 ? `brightness(${brightnessVal / 100})` : undefined,
+        }}
+        className="flex-1 w-full h-full flex flex-col justify-between items-center px-4 sm:px-8 py-16 sm:py-20 transition-colors duration-200 cursor-pointer overflow-hidden"
       >
-        {/* Navigation Tap Zones */}
-        <div
-          id="zone-prev"
-          onClick={goToPrevPage}
-          className="absolute top-0 bottom-0 left-0 w-1/4 z-10 cursor-w-resize"
-          title="Previous Page"
-        />
-        <div
-          id="zone-menu"
-          onClick={() => {
-            setShowControls((prev) => !prev);
-            setShowBrightnessPopover(false);
-            setShowThemePopover(false);
-          }}
-          className="absolute top-0 bottom-0 left-1/4 right-1/4 z-10 cursor-pointer"
-          title="Toggle Controls"
-        />
-        <div
-          id="zone-next"
-          onClick={goToNextPage}
-          className="absolute top-0 bottom-0 right-0 w-1/4 z-10 cursor-e-resize"
-          title="Next Page"
-        />
-
-        {/* Rendered Page Surface Container */}
-        <div
-          id="page-container"
-          style={{
-            backgroundColor: pageTheme.bg,
-            color: pageTheme.text,
-            borderColor: pageTheme.border,
-            transform: turnDirection === 'next' ? 'translateX(30px)' : turnDirection === 'prev' ? 'translateX(-30px)' : 'translateX(0)',
-            opacity: turnDirection !== 'none' ? 0.7 : 1,
-            transition: 'transform 0.18s ease-out, opacity 0.18s ease-out',
-          }}
-          className="w-full max-w-2xl h-full flex flex-col justify-between rounded-lg p-5 sm:p-8 border pointer-events-none z-0 shadow-lg"
+        <div 
+          className={`w-full max-w-2xl h-full flex flex-col justify-between transition-all duration-150 ${
+            turnDirection === 'next' 
+              ? 'opacity-80 translate-x-1' 
+              : turnDirection === 'prev' 
+              ? 'opacity-80 -translate-x-1' 
+              : 'opacity-100 translate-x-0'
+          }`}
+          style={{ color: pageTheme.text }}
         >
-          {/* Paginated Content */}
+          {/* Running Header */}
           <div 
-            id="page-content"
-            style={{ fontSize: `${settings.fontSize}px`, lineHeight: 1.7 }}
-            className="flex-1 overflow-hidden font-serif"
+            style={{ borderColor: `${pageTheme.border}80`, color: pageTheme.muted }}
+            className="flex items-center justify-between pb-2 text-[11px] font-mono border-b"
           >
-            {activePage?.isChapterStart && (
-              <h2 
-                style={{ borderColor: pageTheme.border }}
-                className="text-lg font-bold tracking-tight mb-4 pb-2 border-b"
-              >
-                {activePage.chapterTitle}
-              </h2>
-            )}
+            <span className="truncate max-w-[200px]">{book.title}</span>
+            <span className="truncate max-w-[160px] text-right font-medium">
+              {book.author || 'KindleFlow'}
+            </span>
+          </div>
+
+          {/* Page Body Text */}
+          <div 
+            className="flex-1 my-auto flex flex-col justify-start overflow-hidden pt-4 leading-relaxed"
+            style={{
+              fontSize: `${settings.fontSize}px`,
+              lineHeight: settings.lineHeight || 1.7,
+              fontFamily: 
+                settings.font === 'serif' ? "'Charis SIL', Georgia, serif" :
+                settings.font === 'newsreader' ? "'Newsreader', Georgia, serif" :
+                settings.font === 'sans' ? "'Plus Jakarta Sans', system-ui, sans-serif" :
+                "'JetBrains Mono', monospace",
+            }}
+          >
             {activePage ? (
               activePage.paragraphs.map((para, i) => (
-                <p key={i} className="text-justify mb-4">
+                <p key={i} className="text-justify mb-4 break-words">
                   {para}
                 </p>
               ))
@@ -538,7 +630,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         </div>
       </main>
 
-      {/* Bottom Control Bar (Strict Monochrome) */}
+      {/* Bottom Control Bar */}
       <footer
         id="reader-bottombar"
         className={`absolute bottom-0 left-0 right-0 z-30 px-4 sm:px-8 py-3.5 bg-[#000000]/95 backdrop-blur-md border-t border-[#222222] flex flex-col gap-2 transition-all duration-200 ${
@@ -550,7 +642,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             id="btn-prev-page"
             onClick={goToPrevPage}
             disabled={currentPage <= 1}
-            className="p-1.5 rounded-lg bg-[#111111] text-[#FFFFFF] border border-[#222222] hover:border-[#444444] disabled:opacity-30 disabled:pointer-events-none transition"
+            className="p-1.5 rounded-xl bg-[#000000] text-[#FFFFFF] border border-[#222222] hover:border-[#444444] disabled:opacity-30 disabled:pointer-events-none transition"
             title="Previous page"
           >
             <ChevronLeft className="w-4 h-4" />
@@ -563,14 +655,14 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
             max={Math.max(1, pages.length)}
             value={currentPage}
             onChange={(e) => setCurrentPage(parseInt(e.target.value))}
-            className="flex-1 cursor-pointer"
+            className="flex-1 cursor-pointer accent-[#FFFFFF]"
           />
 
           <button
             id="btn-next-page"
             onClick={goToNextPage}
             disabled={currentPage >= pages.length}
-            className="p-1.5 rounded-lg bg-[#111111] text-[#FFFFFF] border border-[#222222] hover:border-[#444444] disabled:opacity-30 disabled:pointer-events-none transition"
+            className="p-1.5 rounded-xl bg-[#000000] text-[#FFFFFF] border border-[#222222] hover:border-[#444444] disabled:opacity-30 disabled:pointer-events-none transition"
             title="Next page"
           >
             <ChevronRight className="w-4 h-4" />
@@ -581,7 +673,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           <div className="flex items-center gap-2">
             <span id="reading-percentage">{progressPercent}% completed</span>
             <span className="text-[#333333] hidden xs:inline">|</span>
-            <span id="session-timer" className="flex items-center gap-1 text-[#CCCCCC]" title="Current reading session duration">
+            <span id="session-timer" className="flex items-center gap-1 text-[#CCCCCC]" title="Actual reading duration">
               <Clock className="w-3 h-3 text-[#888888]" />
               {formatSessionTime(sessionSeconds)}
             </span>
@@ -602,10 +694,10 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         </div>
       </footer>
 
-      {/* Subtle Auto-Save Floating Indicator */}
+      {/* Auto-Save Floating Indicator */}
       <div 
         id="save-indicator-toast"
-        className={`absolute bottom-6 right-6 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#111111]/95 border border-[#222222] text-[10px] font-mono text-[#CCCCCC] backdrop-blur-sm pointer-events-none transition-all duration-300 shadow-md ${
+        className={`absolute bottom-6 right-6 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#000000]/95 border border-[#222222] text-[10px] font-mono text-[#CCCCCC] backdrop-blur-sm pointer-events-none transition-all duration-300 shadow-md ${
           isSaving ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-1.5 scale-95 pointer-events-none'
         }`}
       >
@@ -613,48 +705,114 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
         <span>Progress saved</span>
       </div>
 
-      {/* Table of Contents Drawer */}
+      {/* Table of Contents Drawer with Backdrop & Jump-to-Page for long books */}
       {showTocDrawer && (
         <div 
-          id="drawer-toc"
-          className="absolute inset-y-0 left-0 z-40 w-72 sm:w-80 bg-[#111111] border-r border-[#222222] shadow-2xl p-4 flex flex-col"
+          className="fixed inset-0 z-50 flex bg-black/80 backdrop-blur-xs"
+          onClick={() => setShowTocDrawer(false)}
         >
-          <div className="flex items-center justify-between pb-3 border-b border-[#222222] mb-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFFFFF]">Table of Contents</h3>
-            <button
-              id="btn-close-toc"
-              onClick={() => setShowTocDrawer(false)}
-              className="p-1 text-[#888888] hover:text-[#FFFFFF]"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div id="toc-list" className="flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
-            {book.chapters?.map((ch, idx) => (
+          <div 
+            id="drawer-toc"
+            onClick={(e) => e.stopPropagation()}
+            className="w-80 sm:w-96 max-w-[85vw] h-full bg-[#000000] border-r border-[#222222] shadow-2xl p-4 sm:p-5 flex flex-col text-[#FFFFFF]"
+          >
+            {/* TOC Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-[#222222] mb-3">
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#FFFFFF]">Table of Contents</h3>
+                <span className="text-[10px] font-mono text-[#888888]">{pages.length} total pages</span>
+              </div>
               <button
-                key={ch.id || idx}
-                onClick={() => {
-                  const target = pages.findIndex((p) => p.chapterIndex === idx);
-                  if (target !== -1) {
-                    setCurrentPage(target + 1);
-                  }
-                  setShowTocDrawer(false);
-                }}
-                className="text-left px-3 py-2 rounded-lg text-xs font-mono hover:bg-[#222222] text-[#888888] hover:text-[#FFFFFF] transition truncate"
+                id="btn-close-toc"
+                onClick={() => setShowTocDrawer(false)}
+                className="p-1.5 rounded-lg text-[#888888] hover:text-[#FFFFFF] hover:bg-[#111111] transition"
               >
-                {ch.title}
+                <X className="w-4 h-4" />
               </button>
-            ))}
-          </div>
-          <div className="pt-3 mt-auto border-t border-[#1a1a1a] text-center text-[10px] text-[#666666]">
-            <a
-              href="https://davechristopher.me/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[#666666] hover:text-[#888888] no-underline font-normal transition-colors"
-            >
-              @ davechristopher
-            </a>
+            </div>
+
+            {/* Jump to Page Input */}
+            <form onSubmit={handleJumpToPage} className="flex items-center gap-2 mb-3">
+              <input
+                type="number"
+                min={1}
+                max={Math.max(1, pages.length)}
+                placeholder={`Jump to page (1-${pages.length})...`}
+                value={jumpPageInput}
+                onChange={(e) => setJumpPageInput(e.target.value)}
+                className="flex-1 px-3 py-1.5 text-xs bg-[#000000] border border-[#222222] rounded-xl text-[#FFFFFF] placeholder-[#666666] focus:outline-none focus:border-[#444444] font-mono"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 bg-[#FFFFFF] text-[#000000] rounded-xl text-xs font-semibold hover:bg-[#E5E5E5] transition flex items-center gap-1"
+              >
+                <span>Go</span>
+                <ArrowRight className="w-3 h-3" />
+              </button>
+            </form>
+
+            {/* Filter Chapters */}
+            <div className="relative mb-3">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#888888]" />
+              <input
+                type="text"
+                placeholder="Search chapters or sections..."
+                value={tocSearch}
+                onChange={(e) => setTocSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-[#000000] border border-[#222222] rounded-xl text-[#FFFFFF] placeholder-[#666666] focus:outline-none focus:border-[#444444] font-mono"
+              />
+            </div>
+
+            {/* Chapter List */}
+            <div id="toc-list" className="flex-1 overflow-y-auto flex flex-col gap-1 pr-1 custom-scrollbar">
+              {filteredChapters.length === 0 ? (
+                <div className="py-8 text-center text-xs text-[#888888]">
+                  No matching chapters found.
+                </div>
+              ) : (
+                filteredChapters.map((ch) => {
+                  const isCurrentChapter = activePage?.chapterIndex === ch.originalIndex;
+                  return (
+                    <button
+                      key={ch.id || ch.originalIndex}
+                      onClick={() => {
+                        setCurrentPage(ch.startPage);
+                        setShowTocDrawer(false);
+                      }}
+                      className={`w-full flex items-center justify-between gap-3 text-left px-3 py-2.5 rounded-xl text-xs font-mono transition group border ${
+                        isCurrentChapter
+                          ? 'bg-[#111111] border-[#333333] text-[#FFFFFF]'
+                          : 'bg-[#000000] border-transparent hover:border-[#222222] hover:bg-[#0a0a0a] text-[#888888] hover:text-[#FFFFFF]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="text-[10px] text-[#555555] font-mono shrink-0">
+                          {(ch.originalIndex + 1).toString().padStart(2, '0')}
+                        </span>
+                        <span className="truncate flex-1 font-sans text-xs">
+                          {ch.title}
+                        </span>
+                      </div>
+                      <span className="shrink-0 text-[10px] font-mono text-[#888888] bg-[#000000] px-1.5 py-0.5 rounded border border-[#222222] whitespace-nowrap">
+                        p. {ch.startPage}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-3 mt-auto border-t border-[#1a1a1a] text-center text-[10px] text-[#666666]">
+              <a
+                href="https://github.com/DaveChristopherr/KindleFlow"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#666666] hover:text-[#888888] no-underline font-normal transition-colors"
+              >
+                Created by Dave Christopher
+              </a>
+            </div>
           </div>
         </div>
       )}
