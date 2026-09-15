@@ -16,6 +16,7 @@ export interface Chapter {
 
 export interface Book {
   id: string;
+  userId?: string;
   title: string;
   author: string;
   totalPages: number;
