@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Mail, Lock, Loader2, User, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../utils/supabase';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -142,7 +142,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 minLength={6}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                 className="w-full pl-9 pr-3 py-2 text-xs bg-[#000000] border border-[#222222] rounded-xl text-[#FFFFFF] placeholder-[#666666] focus:outline-none focus:border-[#444444] transition font-mono"
               />
             </div>
