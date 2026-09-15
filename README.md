@@ -4,11 +4,6 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
 [![GitHub](https://img.shields.io/badge/GitHub-DaveChristopherr%2FKindleFlow-181717?logo=github)](https://github.com/DaveChristopherr/KindleFlow)
-
-Developed by **Dave Christopher** ([@DaveChristopherr](https://github.com/DaveChristopherr))  
-Website: [davechristopher.me](https://davechristopher.me/)  
-Repository: [https://github.com/DaveChristopherr/KindleFlow](https://github.com/DaveChristopherr/KindleFlow)
-
 ---
 
 ## Overview
@@ -118,14 +113,6 @@ KindleFlow supports user accounts and cloud synchronization via Supabase.
 - **PDF Engine**: Mozilla's `pdfjs-dist`
 - **Database & Auth**: Supabase (`@supabase/supabase-js`) & IndexedDB
 - **Icons**: `lucide-react`
-
----
-
-## Author
-
-Created by **Dave Christopher**  
-GitHub: [https://github.com/DaveChristopherr](https://github.com/DaveChristopherr)  
-Repository: [https://github.com/DaveChristopherr/KindleFlow](https://github.com/DaveChristopherr/KindleFlow)
 
 ---
 
