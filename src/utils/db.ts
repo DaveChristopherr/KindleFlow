@@ -1,12 +1,8 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import { Book, ReadingSettings } from '../types';
+import { supabase } from '../lib/supabase';
 
 const DB_NAME = 'KindleFlowDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_BOOKS = 'books';
 const STORE_SETTINGS = 'settings';
 
@@ -39,7 +35,10 @@ function openDB(): Promise<IDBDatabase> {
     request.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_BOOKS)) {
-        db.createObjectStore(STORE_BOOKS, { keyPath: 'id' });
+        const bookStore = db.createObjectStore(STORE_BOOKS, { keyPath: 'id' });
+        try {
+          bookStore.createIndex('userId', 'userId', { unique: false });
+        } catch {}
       }
       if (!db.objectStoreNames.contains(STORE_SETTINGS)) {
         db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
@@ -51,7 +50,15 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function getBooks(): Promise<Book[]> {
+/**
+ * Get books for a specific user.
+ * If user is not logged in (userId is null or empty), returns an empty array.
+ */
+export async function getBooks(userId: string | null): Promise<Book[]> {
+  if (!userId) {
+    return [];
+  }
+
   const isSample = (b: Book) =>
     !b ||
     b.id.startsWith('sample-') ||
@@ -70,31 +77,21 @@ export async function getBooks(): Promise<Book[]> {
       const req = store.getAll();
 
       req.onsuccess = () => {
-        let books = (req.result as Book[]) || [];
-        // Ensure library starts strictly empty until user uploads a PDF
-        const samples = books.filter(isSample);
-        if (samples.length > 0) {
-          try {
-            const cleanTx = db.transaction(STORE_BOOKS, 'readwrite');
-            const cleanStore = cleanTx.objectStore(STORE_BOOKS);
-            samples.forEach((s) => cleanStore.delete(s.id));
-          } catch {
-            // ignore
-          }
-          books = books.filter((b) => !isSample(b));
-        }
-        resolve(books);
+        let allBooks = (req.result as Book[]) || [];
+        // Filter strictly by userId
+        const userBooks = allBooks.filter((b) => !isSample(b) && b.userId === userId);
+        resolve(userBooks);
       };
       req.onerror = () => reject(req.error);
     });
   } catch (err) {
-    console.warn('IndexedDB fallback to localStorage:', err);
+    console.warn('IndexedDB fallback reading:', err);
     try {
-      const local = localStorage.getItem('kindleflow_books');
+      const localKey = `kindleflow_books_${userId}`;
+      const local = localStorage.getItem(localKey);
       if (local) {
         let parsed = JSON.parse(local) as Book[];
-        parsed = parsed.filter((b) => !isSample(b));
-        localStorage.setItem('kindleflow_books', JSON.stringify(parsed));
+        parsed = parsed.filter((b) => !isSample(b) && b.userId === userId);
         return parsed;
       }
       return [];
@@ -104,32 +101,67 @@ export async function getBooks(): Promise<Book[]> {
   }
 }
 
-export async function saveBook(book: Book): Promise<void> {
+/**
+ * Save book associated with a user ID.
+ */
+export async function saveBook(book: Book, userId?: string | null): Promise<void> {
+  const targetUserId = userId || book.userId;
+  if (!targetUserId) {
+    // Do not save books without a user ID
+    return;
+  }
+
+  const bookToSave: Book = {
+    ...book,
+    userId: targetUserId,
+  };
+
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_BOOKS, 'readwrite');
       const store = tx.objectStore(STORE_BOOKS);
-      store.put(book);
+      store.put(bookToSave);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   } catch (err) {
     console.warn('Fallback save to localStorage:', err);
     try {
-      const current = await getBooks();
-      const updated = current.filter(b => b.id !== book.id).concat([book]);
-      localStorage.setItem('kindleflow_books', JSON.stringify(updated));
+      const localKey = `kindleflow_books_${targetUserId}`;
+      const current = await getBooks(targetUserId);
+      const updated = current.filter((b) => b.id !== bookToSave.id).concat([bookToSave]);
+      localStorage.setItem(localKey, JSON.stringify(updated));
+    } catch {}
+  }
+
+  // If Supabase is connected, optionally sync metadata to cloud
+  if (supabase && targetUserId) {
+    try {
+      await supabase.from('books').upsert({
+        id: bookToSave.id,
+        user_id: targetUserId,
+        title: bookToSave.title,
+        author: bookToSave.author,
+        total_pages: bookToSave.totalPages,
+        last_page_read: bookToSave.lastPageRead,
+        time_spent: bookToSave.timeSpent || 0,
+        last_opened: bookToSave.lastOpened,
+        updated_at: new Date().toISOString(),
+      });
     } catch {
-      // ignore
+      // Non-fatal if table doesn't exist yet
     }
   }
 }
 
-export async function deleteBook(id: string): Promise<void> {
+/**
+ * Delete a book from database.
+ */
+export async function deleteBook(id: string, userId?: string | null): Promise<void> {
   try {
     const db = await openDB();
-    return new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_BOOKS, 'readwrite');
       const store = tx.objectStore(STORE_BOOKS);
       store.delete(id);
@@ -138,13 +170,21 @@ export async function deleteBook(id: string): Promise<void> {
     });
   } catch (err) {
     console.warn('Fallback delete from localStorage:', err);
-    try {
-      const current = await getBooks();
-      const updated = current.filter(b => b.id !== id);
-      localStorage.setItem('kindleflow_books', JSON.stringify(updated));
-    } catch {
-      // ignore
+    if (userId) {
+      try {
+        const localKey = `kindleflow_books_${userId}`;
+        const current = await getBooks(userId);
+        const updated = current.filter((b) => b.id !== id);
+        localStorage.setItem(localKey, JSON.stringify(updated));
+      } catch {}
     }
+  }
+
+  // If Supabase is connected, delete from cloud as well
+  if (supabase && userId) {
+    try {
+      await supabase.from('books').delete().eq('id', id).eq('user_id', userId);
+    } catch {}
   }
 }
 
