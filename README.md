@@ -1,64 +1,134 @@
 # KindleFlow
 
-### Reflowable E-Reader for PDF Documents
+> Reflowable, responsive Kindle-style e-reader for PDF documents with OLED dark mode, canvas line budgeting, and Supabase cloud accounts.
 
-KindleFlow is an open-source, high-performance web-based e-reader designed to transform fixed-layout PDF documents into responsive, reflowable e-book pages. Traditional PDF viewers rely on static page scaling, forcing readers to pinch, zoom, and scroll horizontally on mobile devices and smaller screens. KindleFlow extracts document text, detects structural sections, and repaginates content smoothly across any screen resolution.
+[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
+[![GitHub](https://img.shields.io/badge/GitHub-DaveChristopherr%2FKindleFlow-181717?logo=github)](https://github.com/DaveChristopherr/KindleFlow)
 
----
-
-## Why I Built This
-
-I built KindleFlow as a personal project to solve a frustrating problem I kept running into: reading book-length PDF files on my phone and computer.
-
-Whenever I opened PDF books in apps like Google Play Books or standard document viewers, it was an exhausting reading experience. Because PDFs have fixed page dimensions, the text never adapts to phone or tablet screens. I was constantly pinching to zoom in, panning left and right to read each sentence, and losing my place on the page. Converting files to EPUB often broke formatting or took annoying extra steps.
-
-I wanted something clean and distraction-free that works like a Kindle but natively for PDF files. KindleFlow takes any PDF book, parses the text directly in the browser, reflows it to match your exact screen size, and lets you read naturally without ever having to pinch or zoom again.
+Developed by **Dave Christopher** ([@DaveChristopherr](https://github.com/DaveChristopherr))  
+Website: [davechristopher.me](https://davechristopher.me/)  
+Repository: [https://github.com/DaveChristopherr/KindleFlow](https://github.com/DaveChristopherr/KindleFlow)
 
 ---
 
-## Features
+## Overview
 
-- Continuous text reflow: Turns fixed-layout PDF pages into responsive book pages that fit any screen size.
-- Zero-lag pagination engine: Uses an offscreen HTML5 Canvas 2D measurement buffer for sub-25ms page recalculation.
-- Session reading timer: Displays active reading time spent in the current document directly in the reader bar.
-- Auto-save visual indicator: Automatically saves reading progress to browser IndexedDB with a subtle confirmation indicator on page changes.
-- OLED Black mode (#000000) alongside Sepia Paper and Crisp White reading canvases.
-- Adjustable font size (A- / A+), software brightness slider, and Table of Contents drawer.
-- Pure client-side privacy: Documents and reading history remain stored locally in your browser.
-- Fully responsive layout: Seamless reading experience across mobile phones, tablets, laptops, and desktop screens with touch gestures and keyboard shortcuts.
+Traditional PDF viewers rely on static page scaling, forcing readers to pinch, zoom, and scroll horizontally on mobile phones and tablets. **KindleFlow** solves this problem by parsing PDF text and reflowing it into dynamic, paginated e-book pages that comfortably adapt to any screen dimension.
 
----
-
-## How It Works
-
-### High-Performance Canvas Line-Budgeting Engine
-Traditional web readers often suffer from severe lag during pagination due to repeated DOM measurements (`innerHTML` updates and `offsetHeight` recalculations) inside nested binary search loops. KindleFlow eliminates this bottleneck entirely by utilizing an offscreen HTML5 Canvas 2D rendering context to compute exact word and line measurements in memory.
-
-- Zero DOM layout thrashing during pagination recalculations.
-- Instantaneous font resizing (A- / A+) and window resizing with zero frame drops.
-- Capable of paginating 100,000+ words in under 25 milliseconds.
-
-### Cooperative Multitasking PDF Parser
-Large PDF files (including multi-megabyte documents with hundreds of pages) are processed using cooperative event-loop yielding:
-- Processing yields execution every 25 milliseconds, ensuring the browser UI remains completely fluid and responsive.
-- Every page triggers automatic memory disposal (`page.cleanup()`), preventing tab crashes and memory leaks.
-- Smart heading detection and hyphenation cleanup across line breaks.
-
-### Offline-First Architecture & Privacy
-- Zero cloud database dependency: Your books, reading positions, and bookmarks stay in your device's IndexedDB.
-- No network transmission: Uploaded documents are parsed strictly inside the client runtime.
-- Instant resume: Reopening a book immediately restores your exact page and reading progress.
+KindleFlow provides:
+- **Reflowable PDF Pagination**: Converts fixed-layout PDFs into responsive, clean e-book pages.
+- **Sub-25ms Pagination Engine**: Offscreen HTML5 Canvas 2D line measurement avoids DOM layout thrashing.
+- **OLED Dark Mode & Aesthetic**: Built with deep black backgrounds (`#000000`) and subtle borders (`#222222`), ideal for OLED displays and battery savings.
+- **Account & Cloud Sync**: Sign in with email to isolate your private library. Books are hidden when logged out and restored when logged in.
+- **Actual Reading Time**: Tracks exact minutes and hours spent reading across your library in your Account Dashboard.
+- **Table of Contents & Jump-to-Page**: Clean chapter navigation drawer with page badges and direct page jumping for documents with hundreds of pages.
+- **Privacy First**: All PDF parsing is performed directly in your browser.
 
 ---
 
-## Supported Documents
+## Getting Started
 
-- Standard text-based PDF documents, technical books, manuals, and literature.
-- Text reflow operates on readable character streams; scanned image-only PDFs should be OCR-processed beforehand for optimal reflow parsing.
+### Prerequisites
+
+- Node.js 18+ or Bun
+- npm or bun
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/DaveChristopherr/KindleFlow.git
+
+# Navigate into project directory
+cd KindleFlow
+
+# Install dependencies
+npm install
+```
+
+### Running Locally
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### Building for Production
+
+```bash
+npm run build
+```
+
+The compiled static files will be generated in the `dist` directory.
+
+---
+
+## Supabase Setup (Authentication & Cloud Database)
+
+KindleFlow supports user accounts and cloud synchronization via Supabase.
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Go to **Project Settings > API** to get your **Project URL** and **anon public key**.
+3. Create a `.env` file in the root directory:
+   ```env
+   VITE_SUPABASE_URL=https://your-project-id.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-public-key
+   ```
+4. In Supabase, enable **Email Auth** under **Authentication > Providers**.
+5. (Optional) Run the following SQL query in the Supabase SQL Editor if you want to store books in a Postgres table:
+   ```sql
+   create table public.books (
+     id text primary key,
+     user_id text not null,
+     title text not null,
+     author text,
+     total_pages integer,
+     last_page_read integer default 1,
+     time_spent integer default 0,
+     last_opened timestamptz default now(),
+     updated_at timestamptz default now()
+   );
+
+   alter table public.books enable row level security;
+
+   create policy "Users can manage their own books"
+     on public.books for all
+     using (auth.uid()::text = user_id);
+   ```
+
+---
+
+## Deploy to Vercel
+
+1. Push your repository to GitHub: `git push origin main`
+2. Go to [vercel.com](https://vercel.com) and click **Add New Project**.
+3. Import your `KindleFlow` repository.
+4. Under **Environment Variables**, add:
+   - `VITE_SUPABASE_URL`: Your Supabase Project URL
+   - `VITE_SUPABASE_ANON_KEY`: Your Supabase Anon Key
+5. Click **Deploy**. Vercel will automatically build and publish your site at `https://your-project.vercel.app`.
+
+---
+
+## Tech Stack
+
+- **Framework**: React 19, TypeScript, Vite
+- **Styling**: Tailwind CSS
+- **PDF Engine**: Mozilla's `pdfjs-dist`
+- **Database & Auth**: Supabase (`@supabase/supabase-js`) & IndexedDB
+- **Icons**: `lucide-react`
+
+---
+
+## Author
+
+Created by **Dave Christopher**  
+GitHub: [https://github.com/DaveChristopherr](https://github.com/DaveChristopherr)  
+Repository: [https://github.com/DaveChristopherr/KindleFlow](https://github.com/DaveChristopherr/KindleFlow)
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
+This project is licensed under the [MIT License](LICENSE).
