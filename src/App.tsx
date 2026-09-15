@@ -13,7 +13,7 @@ import {
   saveUserSettings, 
   DEFAULT_SETTINGS 
 } from './utils/db';
-import { supabase } from './lib/supabase';
+import { supabase } from './utils/supabase';
 import { LibraryView } from './components/LibraryView';
 import { ReaderView } from './components/ReaderView';
 import { Loader2 } from 'lucide-react';
@@ -222,4 +222,4 @@ export default function App() {
       )}
     </div>
   );
-                                       }
+        }
