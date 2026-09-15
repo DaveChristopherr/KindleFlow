@@ -13,33 +13,97 @@ import {
   saveUserSettings, 
   DEFAULT_SETTINGS 
 } from './utils/db';
+import { supabase } from './lib/supabase';
 import { LibraryView } from './components/LibraryView';
 import { ReaderView } from './components/ReaderView';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [books, setBooks] = useState<Book[]>([]);
   const [activeBook, setActiveBook] = useState<Book | null>(null);
   const [settings, setSettings] = useState<ReadingSettings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Load books & settings from IndexedDB on initial mount
+  // Setup auth session listener
   useEffect(() => {
-    async function initData() {
+    let isMounted = true;
+
+    async function initAuthAndData() {
       try {
-        const [loadedBooks, loadedSettings] = await Promise.all([
-          getBooks(),
-          getSavedSettings(),
-        ]);
-        setBooks(loadedBooks);
-        setSettings(loadedSettings);
+        const loadedSettings = await getSavedSettings();
+        if (isMounted) setSettings(loadedSettings);
+
+        if (supabase) {
+          const { data: { session } } = await supabase.auth.getSession();
+          const email = session?.user?.email || null;
+          if (isMounted) {
+            setUserEmail(email);
+            if (email) {
+              const loadedBooks = await getBooks(email);
+              if (isMounted) setBooks(loadedBooks);
+            } else {
+              setBooks([]);
+            }
+          }
+
+          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+            const newEmail = session?.user?.email || null;
+            if (isMounted) {
+              setUserEmail(newEmail);
+              if (newEmail) {
+                const b = await getBooks(newEmail);
+                if (isMounted) setBooks(b);
+              } else {
+                setBooks([]);
+                setActiveBook(null);
+              }
+            }
+          });
+
+          return () => subscription.unsubscribe();
+        } else {
+          // Local account fallback
+          const savedEmail = localStorage.getItem('kindleflow_session_user');
+          if (isMounted) {
+            setUserEmail(savedEmail);
+            if (savedEmail) {
+              const loadedBooks = await getBooks(savedEmail);
+              if (isMounted) setBooks(loadedBooks);
+            } else {
+              setBooks([]);
+            }
+          }
+        }
       } catch (err) {
-        console.error('Failed to initialize KindleFlow data:', err);
+        console.error('Failed to initialize KindleFlow:', err);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     }
-    initData();
+
+    initAuthAndData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleSignInSuccess = useCallback(async (email: string) => {
+    localStorage.setItem('kindleflow_session_user', email);
+    setUserEmail(email);
+    const userBooks = await getBooks(email);
+    setBooks(userBooks);
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
+    localStorage.removeItem('kindleflow_session_user');
+    setUserEmail(null);
+    setBooks([]);
+    setActiveBook(null);
   }, []);
 
   const handleSelectBook = useCallback((book: Book) => {
@@ -47,16 +111,16 @@ export default function App() {
       ...book,
       lastOpened: new Date().toISOString(),
     };
-    saveBook(updatedBook);
+    saveBook(updatedBook, userEmail);
     setActiveBook(updatedBook);
     setBooks((prev) => prev.map((b) => (b.id === book.id ? updatedBook : b)));
-  }, []);
+  }, [userEmail]);
 
   const handleDeleteBook = useCallback(async (bookId: string) => {
-    await deleteBook(bookId);
+    await deleteBook(bookId, userEmail);
     setBooks((prev) => prev.filter((b) => b.id !== bookId));
     setActiveBook((curr) => (curr?.id === bookId ? null : curr));
-  }, []);
+  }, [userEmail]);
 
   const handleBookAdded = useCallback((newBook: Book) => {
     setBooks((prev) => [newBook, ...prev]);
@@ -85,9 +149,9 @@ export default function App() {
       })
     );
     if (toSave) {
-      await saveBook(toSave);
+      await saveBook(toSave, userEmail);
     }
-  }, []);
+  }, [userEmail]);
 
   const handleToggleBookmark = useCallback(async (bookId: string, pageNumber: number) => {
     setBooks((prev) =>
@@ -99,7 +163,7 @@ export default function App() {
             ? currentBms.filter((p) => p !== pageNumber)
             : [...currentBms, pageNumber];
           const updated = { ...b, bookmarks: newBms };
-          saveBook(updated);
+          saveBook(updated, userEmail);
           return updated;
         }
         return b;
@@ -116,7 +180,7 @@ export default function App() {
       }
       return curr;
     });
-  }, []);
+  }, [userEmail]);
 
   const handleUpdateSettings = useCallback((newSettings: ReadingSettings) => {
     setSettings(newSettings);
@@ -148,11 +212,14 @@ export default function App() {
       ) : (
         <LibraryView
           books={books}
+          userEmail={userEmail}
           onSelectBook={handleSelectBook}
           onDeleteBook={handleDeleteBook}
           onBookAdded={handleBookAdded}
+          onSignOut={handleSignOut}
+          onSignInSuccess={handleSignInSuccess}
         />
       )}
     </div>
   );
-    }
+                                       }
