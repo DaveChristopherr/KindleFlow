@@ -1,5 +1,5 @@
 import { Book, ReadingSettings } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase } from './supabase';
 
 const DB_NAME = 'KindleFlowDB';
 const DB_VERSION = 2;
@@ -228,4 +228,4 @@ export async function saveUserSettings(settings: ReadingSettings): Promise<void>
       localStorage.setItem('kindleflow_settings', JSON.stringify(settings));
     } catch {}
   }
-}
+                            }
