@@ -16,6 +16,7 @@ import {
 import { supabase } from './utils/supabase';
 import { LibraryView } from './components/LibraryView';
 import { ReaderView } from './components/ReaderView';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { Loader2 } from 'lucide-react';
 
 export default function App() {
@@ -130,15 +131,30 @@ export default function App() {
     setActiveBook(null);
   }, []);
 
-  const handleUpdateProgress = useCallback(async (bookId: string, pageNumber: number, timeSpent?: number) => {
+  const handleUpdateProgress = useCallback(async (
+    bookId: string, 
+    pageNumber: number, 
+    timeSpent?: number, 
+    totalPages?: number
+  ) => {
     let toSave: Book | null = null;
     setBooks((prev) =>
       prev.map((b) => {
         if (b.id === bookId) {
-          if (b.lastPageRead === pageNumber && (timeSpent === undefined || b.timeSpent === timeSpent)) return b;
+          const updatedTotalPages = totalPages && totalPages > 0 
+            ? Math.max(b.totalPages || 1, totalPages) 
+            : b.totalPages;
+          if (
+            b.lastPageRead === pageNumber && 
+            (timeSpent === undefined || b.timeSpent === timeSpent) &&
+            (!totalPages || b.totalPages === updatedTotalPages)
+          ) {
+            return b;
+          }
           const updated = { 
             ...b, 
             lastPageRead: pageNumber, 
+            totalPages: updatedTotalPages,
             lastOpened: new Date().toISOString(),
             timeSpent: timeSpent !== undefined ? timeSpent : b.timeSpent
           };
@@ -199,7 +215,8 @@ export default function App() {
   }
 
   return (
-    <div className="w-screen h-[100dvh] overflow-hidden bg-black flex flex-col">
+    <div className="w-screen h-[100dvh] overflow-hidden bg-black flex flex-col relative">
+      <OfflineIndicator />
       {activeBook ? (
         <ReaderView
           book={activeBook}
@@ -222,4 +239,4 @@ export default function App() {
       )}
     </div>
   );
-        }
+            }
