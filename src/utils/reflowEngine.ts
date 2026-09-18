@@ -132,7 +132,9 @@ export function calculateReflowPages(
   }
 
   const effectiveWidth = Math.max(260, maxWidth - horizontalPadding * 2);
-  const effectiveHeight = Math.max(240, containerHeight - 110);
+  // Accurate vertical clearance accounting for running header, footer, and padding
+  const verticalChrome = containerHeight > 600 ? 140 : 120;
+  const effectiveHeight = Math.max(220, containerHeight - verticalChrome);
 
   // Setup offscreen canvas typography
   const ctx = getCanvasContext();
@@ -147,39 +149,54 @@ export function calculateReflowPages(
 
   const lineHeightRatio = typeof settings.lineHeight === 'number' ? settings.lineHeight : 1.7;
   const lineHeightPx = Math.round(settings.fontSize * lineHeightRatio);
-  const paraSpacingPx = Math.round(settings.fontSize * 0.85);
-  const titleHeightPx = Math.round(settings.fontSize * 1.35 * 1.3) + 24;
+  const paraSpacingPx = Math.round(settings.fontSize * 0.7);
+  const titleHeightPx = Math.round(settings.fontSize * 1.35 * 1.3) + 16;
 
   const pages: ReflowPage[] = [];
 
+  let currentHeight = 0;
+  let currentPageParas: string[] = [];
+  let activeParaLines: string[] = [];
+  let currentPageChapterTitle = book.chapters[0]?.title || book.title;
+  let currentPageChapterIndex = 0;
+  let isChapterStart = true;
+
+  const flushActivePara = () => {
+    if (activeParaLines.length > 0) {
+      currentPageParas.push(activeParaLines.join(' '));
+      activeParaLines = [];
+    }
+  };
+
+  const commitPage = () => {
+    flushActivePara();
+    if (currentPageParas.length > 0) {
+      pages.push({
+        pageNumber: pages.length + 1,
+        chapterIndex: currentPageChapterIndex,
+        chapterTitle: currentPageChapterTitle,
+        paragraphs: [...currentPageParas],
+        isChapterStart,
+      });
+      isChapterStart = false;
+      currentPageParas = [];
+      currentHeight = 0;
+    }
+  };
+
   book.chapters.forEach((chapter, chapterIndex) => {
-    let isChapterStart = true;
-    let currentHeight = 0;
-    let currentPageParas: string[] = [];
-    let activeParaLines: string[] = [];
+    // Check if this chapter represents a major division that warrants a new page
+    const isMajorChapter = /^(?:chapter|part|book|section\s+\d+)/i.test(chapter.title.trim());
+    const hasExistingContent = currentPageParas.length > 0 || activeParaLines.length > 0;
 
-    const flushActivePara = () => {
-      if (activeParaLines.length > 0) {
-        currentPageParas.push(activeParaLines.join(' '));
-        activeParaLines = [];
-      }
-    };
+    // Only force a new page for major chapters or if the current page is already well-filled
+    if (hasExistingContent && (isMajorChapter || currentHeight >= effectiveHeight * 0.5)) {
+      commitPage();
+      isChapterStart = true;
+    }
 
-    const commitPage = () => {
-      flushActivePara();
-      if (currentPageParas.length > 0) {
-        pages.push({
-          pageNumber: pages.length + 1,
-          chapterIndex,
-          chapterTitle: chapter.title,
-          paragraphs: [...currentPageParas],
-          isChapterStart,
-        });
-        isChapterStart = false;
-        currentPageParas = [];
-        currentHeight = 0;
-      }
-    };
+    currentPageChapterTitle = chapter.title;
+    currentPageChapterIndex = chapterIndex;
 
     for (const para of chapter.content) {
       const trimmed = para.trim();
@@ -194,7 +211,15 @@ export function calculateReflowPages(
         const lineCost = lineHeightPx + (isLastLine ? paraSpacingPx : 0);
         const maxPageHeight = isChapterStart ? Math.max(120, effectiveHeight - titleHeightPx) : effectiveHeight;
 
+        // If line exceeds page budget:
         if (currentHeight + lineCost > maxPageHeight && (activeParaLines.length > 0 || currentPageParas.length > 0)) {
+          // If this is the very last line of a paragraph, slightly expand budget to fit it rather than stranding 1 sentence alone
+          if (isLastLine && currentHeight + lineCost <= maxPageHeight + lineHeightPx * 0.75) {
+            activeParaLines.push(line);
+            currentHeight += lineCost;
+            continue;
+          }
+
           commitPage();
         }
 
@@ -203,11 +228,11 @@ export function calculateReflowPages(
       }
       flushActivePara();
     }
-
-    if (activeParaLines.length > 0 || currentPageParas.length > 0) {
-      commitPage();
-    }
   });
+
+  if (activeParaLines.length > 0 || currentPageParas.length > 0) {
+    commitPage();
+  }
 
   if (pages.length === 0) {
     pages.push({

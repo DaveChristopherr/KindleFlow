@@ -53,13 +53,20 @@ function isHeading(text: string, currentFontSize: number, avgFontSize: number): 
   ]);
   if (standaloneTitles.has(s.toLowerCase())) return true;
 
-  // Font size substantially larger than body text (35%+ larger)
-  if (avgFontSize > 0 && currentFontSize >= avgFontSize * 1.35 && s.length < 75) {
+  // Font size substantially larger than body text (30%+ larger)
+  if (avgFontSize > 0 && currentFontSize >= avgFontSize * 1.3 && s.length < 80) {
     return true;
   }
 
-  // Short all-caps line
-  if (s === s.toUpperCase() && s.length >= 4 && s.length < 50 && !/[.,;]$/.test(s)) {
+  // Short all-caps line ONLY if noticeably larger than regular text or matching chapter keywords
+  if (
+    s === s.toUpperCase() && 
+    s.length >= 4 && 
+    s.length < 50 && 
+    !/[.,;]$/.test(s) &&
+    avgFontSize > 0 &&
+    currentFontSize >= avgFontSize * 1.2
+  ) {
     return true;
   }
 
@@ -134,11 +141,18 @@ export async function parsePdfFile(
   const commitChapter = () => {
     const cleanParas = currentParagraphs.map(p => p.trim()).filter(Boolean);
     if (cleanParas.length > 0) {
-      chapters.push({
-        id: `ch-${chapters.length + 1}`,
-        title: currentChapterTitle || `Section ${chapters.length + 1}`,
-        content: cleanParas,
-      });
+      const wordsInChapter = cleanParas.join(' ').split(/\s+/).length;
+      // If the extracted chapter has fewer than 30 words and a prior chapter exists,
+      // append to prior chapter to prevent fragmented 1-sentence pages!
+      if (wordsInChapter < 30 && chapters.length > 0) {
+        chapters[chapters.length - 1].content.push(...cleanParas);
+      } else {
+        chapters.push({
+          id: `ch-${chapters.length + 1}`,
+          title: currentChapterTitle || `Section ${chapters.length + 1}`,
+          content: cleanParas,
+        });
+      }
     }
     currentParagraphs = [];
   };
@@ -266,11 +280,13 @@ export async function parsePdfFile(
     });
   }
 
+  const estimatedPages = Math.max(numPages, Math.ceil(totalWordCount / 220));
+
   const book: Book = {
     id: `book-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     title: docTitle,
     author: docAuthor,
-    totalPages: numPages,
+    totalPages: estimatedPages,
     totalWords: totalWordCount,
     fileSize: file.size,
     filename: file.name,
