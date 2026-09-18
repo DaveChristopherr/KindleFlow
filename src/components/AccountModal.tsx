@@ -22,13 +22,24 @@ export const AccountModal: React.FC<AccountModalProps> = ({
   // Calculate stats
   const totalBooks = books.length;
   const completedBooks = books.filter((b) => {
-    const total = Math.max(1, b.totalPages || 1);
+    const effectiveTotal = Math.max(
+      b.totalPages || 1,
+      b.lastPageRead || 1,
+      Math.ceil((b.totalWords || 0) / 220)
+    );
     const read = b.lastPageRead || 1;
-    return read >= total || (read / total) >= 0.95;
+    return effectiveTotal > 1 && read >= effectiveTotal;
   }).length;
 
   // Actual time spent reading (in seconds)
   const totalActualSeconds = books.reduce((acc, book) => acc + (book.timeSpent || 0), 0);
+
+  // Total estimated hours for the library collection
+  const totalLibraryEstWords = books.reduce((acc, b) => {
+    return acc + (b.totalWords || Math.max(200, (b.totalPages || 1) * 220));
+  }, 0);
+  const totalEstMins = Math.round(totalLibraryEstWords / 220);
+  const totalEstHours = (totalEstMins / 60).toFixed(1);
 
   const formatActualReadingTime = (seconds: number) => {
     if (seconds === 0) return '0m';
@@ -70,7 +81,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
         </div>
 
         {/* Reading Statistics - Black Cards with subtle border */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-4">
           <div className="p-3.5 rounded-xl bg-[#000000] border border-[#222222] text-center">
             <BookOpen className="w-4 h-4 mx-auto mb-1.5 text-[#888888]" />
             <span className="text-base font-bold font-mono text-[#FFFFFF] block">{totalBooks}</span>
@@ -90,6 +101,12 @@ export const AccountModal: React.FC<AccountModalProps> = ({
             </span>
             <span className="text-[10px] text-[#888888] uppercase tracking-wider block">Time Read</span>
           </div>
+        </div>
+
+        {/* Estimated Total Library Reading Material */}
+        <div className="flex items-center justify-between p-3 rounded-xl bg-[#000000] border border-[#222222] text-[11px] font-mono text-[#888888] mb-6">
+          <span>Estimated library content</span>
+          <span className="text-[#FFFFFF] font-bold">~{totalEstHours} hours</span>
         </div>
 
         {/* Sign Out Button */}
