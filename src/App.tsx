@@ -36,33 +36,48 @@ export default function App() {
         if (isMounted) setSettings(loadedSettings);
 
         if (supabase) {
-          const { data: { session } } = await supabase.auth.getSession();
-          const email = session?.user?.email || null;
-          if (isMounted) {
-            setUserEmail(email);
-            if (email) {
-              const loadedBooks = await getBooks(email);
-              if (isMounted) setBooks(loadedBooks);
-            } else {
-              setBooks([]);
-            }
-          }
-
-          const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-            const newEmail = session?.user?.email || null;
+          try {
+            const { data: { session }, error } = await supabase.auth.getSession();
+            if (error) throw error;
+            const email = session?.user?.email || localStorage.getItem('kindleflow_session_user');
             if (isMounted) {
-              setUserEmail(newEmail);
-              if (newEmail) {
-                const b = await getBooks(newEmail);
-                if (isMounted) setBooks(b);
+              setUserEmail(email);
+              if (email) {
+                const loadedBooks = await getBooks(email);
+                if (isMounted) setBooks(loadedBooks);
               } else {
                 setBooks([]);
-                setActiveBook(null);
               }
             }
-          });
 
-          return () => subscription.unsubscribe();
+            const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+              const newEmail = session?.user?.email || localStorage.getItem('kindleflow_session_user');
+              if (isMounted) {
+                setUserEmail(newEmail);
+                if (newEmail) {
+                  const b = await getBooks(newEmail);
+                  if (isMounted) setBooks(b);
+                } else {
+                  setBooks([]);
+                  setActiveBook(null);
+                }
+              }
+            });
+
+            return () => subscription.unsubscribe();
+          } catch (offlineErr) {
+            console.warn('Supabase offline/network error, falling back to local session:', offlineErr);
+            const savedEmail = localStorage.getItem('kindleflow_session_user');
+            if (isMounted) {
+              setUserEmail(savedEmail);
+              if (savedEmail) {
+                const loadedBooks = await getBooks(savedEmail);
+                if (isMounted) setBooks(loadedBooks);
+              } else {
+                setBooks([]);
+              }
+            }
+          }
         } else {
           // Local account fallback
           const savedEmail = localStorage.getItem('kindleflow_session_user');
@@ -124,7 +139,7 @@ export default function App() {
   }, [userEmail]);
 
   const handleBookAdded = useCallback((newBook: Book) => {
-    setBooks((prev) => [newBook, ...prev]);
+    setBooks((prev) => [newBook, ...prev.filter((b) => b.id !== newBook.id)]);
   }, []);
 
   const handleBackToLibrary = useCallback(() => {
@@ -239,4 +254,4 @@ export default function App() {
       )}
     </div>
   );
-            }
+    }
