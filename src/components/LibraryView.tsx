@@ -48,11 +48,33 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeTab, setActiveTab] = useState<'all' | 'reading' | 'finished'>('all');
 
-  const filteredBooks = books.filter((b) => 
-    b.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    b.author.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const processedBooks = books.map((book) => {
+    const effectiveTotalPages = Math.max(
+      book.totalPages || 1,
+      book.lastPageRead || 1,
+      Math.ceil((book.totalWords || 0) / 220)
+    );
+    const lastRead = Math.max(1, book.lastPageRead || 1);
+    const isFinished = lastRead >= effectiveTotalPages && effectiveTotalPages > 1;
+    return { book, isFinished };
+  });
+
+  const filteredBooks = processedBooks.filter(({ book, isFinished }) => {
+    const matchesSearch = 
+      book.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      book.author.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!matchesSearch) return false;
+
+    if (activeTab === 'reading') return !isFinished;
+    if (activeTab === 'finished') return isFinished;
+    return true; // 'all'
+  });
+
+  const readingCount = processedBooks.filter(p => !p.isFinished).length;
+  const finishedCount = processedBooks.filter(p => p.isFinished).length;
 
   const handleFile = async (file: File) => {
     if (!userEmail) {
@@ -232,14 +254,46 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           )}
         </section>
 
-        {/* Library Shelf Section Title */}
-        <div className="flex items-center justify-between mb-4">
+        {/* Library Shelf Section Title & Tabs */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <h2 className="text-xs font-bold uppercase tracking-wider text-[#888888]">
             Library Shelf
           </h2>
-          <span className="text-xs font-mono text-[#555555]">
-            {userEmail ? `${books.length} ${books.length === 1 ? 'book' : 'books'}` : 'Locked'}
-          </span>
+
+          {userEmail && (
+            <div className="flex items-center gap-1 bg-[#0a0a0a] border border-[#222222] p-1 rounded-xl text-xs font-mono">
+              <button
+                onClick={() => setActiveTab('all')}
+                className={`px-3 py-1 rounded-lg transition ${
+                  activeTab === 'all' 
+                    ? 'bg-[#FFFFFF] text-[#000000] font-semibold' 
+                    : 'text-[#888888] hover:text-[#FFFFFF]'
+                }`}
+              >
+                All ({books.length})
+              </button>
+              <button
+                onClick={() => setActiveTab('reading')}
+                className={`px-3 py-1 rounded-lg transition ${
+                  activeTab === 'reading' 
+                    ? 'bg-[#FFFFFF] text-[#000000] font-semibold' 
+                    : 'text-[#888888] hover:text-[#FFFFFF]'
+                }`}
+              >
+                Reading ({readingCount})
+              </button>
+              <button
+                onClick={() => setActiveTab('finished')}
+                className={`px-3 py-1 rounded-lg transition ${
+                  activeTab === 'finished' 
+                    ? 'bg-[#FFFFFF] text-[#000000] font-semibold' 
+                    : 'text-[#888888] hover:text-[#FFFFFF]'
+                }`}
+              >
+                Finished ({finishedCount})
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Guest View: Signed Out State */}
@@ -266,22 +320,26 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
             <div className="w-12 h-12 rounded-xl bg-[#000000] border border-[#222222] text-[#888888] flex items-center justify-center mb-4">
               <FileText className="w-5 h-5" />
             </div>
-            <h3 className="text-sm font-semibold text-[#FFFFFF] mb-1">No books in your library</h3>
+            <h3 className="text-sm font-semibold text-[#FFFFFF] mb-1">No books in this view</h3>
             <p className="text-xs text-[#888888] max-w-xs mb-5">
-              Drop or upload a PDF to begin converting fixed documents into responsive pages.
+              {activeTab === 'finished' 
+                ? 'No finished books yet. Keep reading to complete your books!' 
+                : 'Drop or upload a PDF to begin converting fixed documents into responsive pages.'}
             </p>
-            <button
-              id="btn-empty-upload"
-              onClick={() => fileInputRef.current?.click()}
-              className="px-4 py-2 rounded-xl bg-[#FFFFFF] text-[#000000] text-xs font-semibold hover:bg-[#E5E5E5] transition"
-            >
-              Select PDF file
-            </button>
+            {activeTab !== 'finished' && (
+              <button
+                id="btn-empty-upload"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 rounded-xl bg-[#FFFFFF] text-[#000000] text-xs font-semibold hover:bg-[#E5E5E5] transition"
+              >
+                Select PDF file
+              </button>
+            )}
           </div>
         ) : (
           /* Book Cards Grid */
           <div id="book-grid" className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 pb-16">
-            {filteredBooks.map((book) => {
+            {filteredBooks.map(({ book, isFinished }) => {
               // Calculate realistic effective total pages
               const effectiveTotalPages = Math.max(
                 book.totalPages || 1,
@@ -290,7 +348,6 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
               );
 
               const lastRead = Math.max(1, book.lastPageRead || 1);
-              const isFinished = lastRead >= effectiveTotalPages && effectiveTotalPages > 1;
               const rawPct = Math.round((lastRead / Math.max(1, effectiveTotalPages)) * 100);
               const progressPct = isFinished ? 100 : Math.min(99, Math.max(0, rawPct));
 
@@ -406,7 +463,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
           </a>
         </p>
       </footer>
-
+      
       {/* Delete Confirmation Dialog */}
       {bookToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-xs">
@@ -456,4 +513,3 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       />
     </div>
   );
-};
