@@ -80,6 +80,7 @@ export async function getBooks(userId: string | null): Promise<Book[]> {
         let allBooks = (req.result as Book[]) || [];
         // Filter strictly by userId
         const userBooks = allBooks.filter((b) => !isSample(b) && b.userId === userId);
+        userBooks.sort((a, b) => new Date(b.lastOpened || 0).getTime() - new Date(a.lastOpened || 0).getTime());
         resolve(userBooks);
       };
       req.onerror = () => reject(req.error);
@@ -92,6 +93,7 @@ export async function getBooks(userId: string | null): Promise<Book[]> {
       if (local) {
         let parsed = JSON.parse(local) as Book[];
         parsed = parsed.filter((b) => !isSample(b) && b.userId === userId);
+        parsed.sort((a, b) => new Date(b.lastOpened || 0).getTime() - new Date(a.lastOpened || 0).getTime());
         return parsed;
       }
       return [];
@@ -228,4 +230,4 @@ export async function saveUserSettings(settings: ReadingSettings): Promise<void>
       localStorage.setItem('kindleflow_settings', JSON.stringify(settings));
     } catch {}
   }
-                            }
+}
